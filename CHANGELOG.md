@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- [playback] Recover failed Rodio output streams with bounded retries, preserve the selected device ID and configuration, and bound queue/drain waits while allowing CPAL nonfatal notifications
 - [playback] Bound CPAL 0.18 ALSA recovery, retain unwritten samples across partial writes, and keep timestamps monotonic when driver clocks regress
 
 - [connect] Picking a track in a list plays that track: an empty `track_uri` (or `track_uid`) sent next to the one that identifies the track is ignored, instead of failing to resolve and playing the first track of the context
