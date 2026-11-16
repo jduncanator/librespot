@@ -69,6 +69,10 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      - name: Test vendored CPAL ALSA recovery
+        if: runner.os == 'Linux'
+        run: cargo test --manifest-path vendor/cpal/Cargo.toml --locked --lib -- --include-ignored
+
       - name: Test Rodio playback with ALSA null PCM
         if: runner.os == 'Linux'
         env:
