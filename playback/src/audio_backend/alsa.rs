@@ -9,6 +9,10 @@ use alsa::{Direction, ValueOr};
 use std::process::exit;
 use thiserror::Error;
 
+mod io;
+
+use io::{PlaybackIo, SystemClock, finish, write_pending};
+
 const MAX_BUFFER: Frames = (SAMPLE_RATE / 2) as Frames;
 const MIN_BUFFER: Frames = (SAMPLE_RATE / 10) as Frames;
 const ZERO_FRAMES: Frames = 0;
@@ -52,6 +56,18 @@ enum AlsaError {
     #[error("<AlsaSink> {0}")]
     OnWrite(alsa::Error),
 
+    #[error("<AlsaSink> Timed out waiting for PCM {0}")]
+    Timeout(&'static str),
+
+    #[error("<AlsaSink> Too many PCM recoveries without completing a write")]
+    RecoveryLimit,
+
+    #[error("<AlsaSink> Invalid PCM frame or period size")]
+    InvalidFrameSize,
+
+    #[error("<AlsaSink> PCM accepted more frames than supplied")]
+    InvalidWriteSize,
+
     #[error("<AlsaSink> Hardware, {0}")]
     HwParams(alsa::Error),
 
@@ -73,7 +89,9 @@ impl From<AlsaError> for SinkError {
         use AlsaError::*;
         let es = e.to_string();
         match e {
-            DrainFailure(_) | OnWrite(_) => SinkError::OnWrite(es),
+            DrainFailure(_) | OnWrite(_) | Timeout(_) | RecoveryLimit | InvalidWriteSize => {
+                SinkError::OnWrite(es)
+            }
             PcmSetUp { .. } => SinkError::ConnectionRefused(es),
             NotConnected => SinkError::NotConnected(es),
             _ => SinkError::InvalidParams(es),
@@ -100,6 +118,8 @@ pub struct AlsaSink {
     format: AudioFormat,
     device: String,
     period_buffer: Vec<u8>,
+    period_bytes: usize,
+    frame_bytes: usize,
 }
 
 fn list_compatible_devices() -> SinkResult<()> {
@@ -163,7 +183,9 @@ fn list_compatible_devices() -> SinkResult<()> {
 }
 
 fn open_device(dev_name: &str, format: AudioFormat) -> SinkResult<(PCM, usize)> {
-    let pcm = PCM::new(dev_name, Direction::Playback, false).map_err(|e| AlsaError::PcmSetUp {
+    // Blocking writes and drain can wait forever when a device's clock stops.
+    // Keep the existing hardware/software parameters, but wait with a deadline ourselves.
+    let pcm = PCM::new(dev_name, Direction::Playback, true).map_err(|e| AlsaError::PcmSetUp {
         device: dev_name.to_string(),
         e,
     })?;
@@ -409,6 +431,8 @@ impl Open for AlsaSink {
             format,
             device: name,
             period_buffer: vec![],
+            period_bytes: 0,
+            frame_bytes: 0,
         }
     }
 }
@@ -417,13 +441,24 @@ impl Sink for AlsaSink {
     fn start(&mut self) -> SinkResult<()> {
         if self.pcm.is_none() {
             let (pcm, bytes_per_period) = open_device(&self.device, self.format)?;
+            let bytes_per_frame = pcm.frames_to_bytes(1);
+            if bytes_per_frame <= 0
+                || bytes_per_period == 0
+                || bytes_per_period % bytes_per_frame as usize != 0
+            {
+                return Err(AlsaError::InvalidFrameSize.into());
+            }
             self.pcm = Some(pcm);
+            self.period_bytes = bytes_per_period;
+            self.frame_bytes = bytes_per_frame as usize;
 
-            if self.period_buffer.capacity() != bytes_per_period {
+            self.period_buffer.clear();
+            if self.period_buffer.capacity() < bytes_per_period {
                 self.period_buffer = Vec::with_capacity(bytes_per_period);
             }
 
-            // Should always match the "Period Buffer size in bytes: " trace! message.
+            // Allocation capacity can exceed the negotiated period size; writes
+            // use period_bytes rather than treating capacity as an audio setting.
             trace!(
                 "Period Buffer capacity: {:?}",
                 self.period_buffer.capacity()
@@ -434,15 +469,17 @@ impl Sink for AlsaSink {
     }
 
     fn stop(&mut self) -> SinkResult<()> {
-        if self.pcm.is_some() {
-            // Zero fill the remainder of the period buffer and
-            // write any leftover data before draining the actual PCM buffer.
-            self.period_buffer.resize(self.period_buffer.capacity(), 0);
-            self.write_buf()?;
-
-            let pcm = self.pcm.take().ok_or(AlsaError::NotConnected)?;
-
-            pcm.drain().map_err(AlsaError::DrainFailure)?;
+        if let Err(e) = finish(
+            &mut self.pcm,
+            &mut self.period_buffer,
+            self.period_bytes,
+            self.frame_bytes,
+            &mut SystemClock::default(),
+        ) {
+            // The device has been closed even if its remaining audio could not be
+            // drained. Reporting a stop error makes the player exit the process;
+            // a discarded tail should instead allow a later start to reopen it.
+            warn!("AlsaSink closed without draining all queued audio: {e}");
         }
 
         Ok(())
@@ -454,9 +491,13 @@ impl Sink for AlsaSink {
 impl SinkAsBytes for AlsaSink {
     #[inline]
     fn write_bytes(&mut self, data: &[u8]) -> SinkResult<()> {
+        if self.pcm.is_none() {
+            return Err(AlsaError::NotConnected.into());
+        }
+
         let mut start_index = 0;
         let data_len = data.len();
-        let capacity = self.period_buffer.capacity();
+        let capacity = self.period_bytes;
 
         loop {
             let data_left = data_len - start_index;
@@ -484,29 +525,86 @@ impl AlsaSink {
     pub const NAME: &'static str = "alsa";
 
     fn write_buf(&mut self) -> SinkResult<()> {
-        if self.pcm.is_some() {
-            let write_result = {
-                let pcm = self.pcm.as_mut().ok_or(AlsaError::NotConnected)?;
+        write_pending(
+            &mut self.pcm,
+            &mut self.period_buffer,
+            self.frame_bytes,
+            &mut SystemClock::default(),
+        )
+        .map_err(Into::into)
+    }
+}
 
-                match pcm.io_bytes().writei(&self.period_buffer) {
-                    Ok(_) => Ok(()),
-                    Err(e) => {
-                        // Capture and log the original error as a warning, and then try to recover.
-                        // If recovery fails then forward that error back to player.
-                        warn!("Error writing from AlsaSink buffer to PCM, trying to recover, {e}");
+impl PlaybackIo for PCM {
+    fn write(&mut self, data: &[u8]) -> Result<usize, alsa::Error> {
+        self.io_bytes().writei(data)
+    }
 
-                        pcm.try_recover(e, false).map_err(AlsaError::OnWrite)
-                    }
-                }
-            };
+    fn wait(&mut self, timeout_ms: u32) -> Result<bool, alsa::Error> {
+        PCM::wait(self, Some(timeout_ms))
+    }
 
-            if let Err(e) = write_result {
-                self.pcm = None;
-                return Err(e.into());
-            }
-        }
+    fn prepare(&mut self) -> Result<(), alsa::Error> {
+        PCM::prepare(self)
+    }
 
-        self.period_buffer.clear();
-        Ok(())
+    fn resume(&mut self) -> Result<(), alsa::Error> {
+        PCM::resume(self)
+    }
+
+    fn drain(&mut self) -> Result<(), alsa::Error> {
+        PCM::drain(self)
+    }
+
+    fn discard(&mut self) -> Result<(), alsa::Error> {
+        PCM::drop(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn writing_before_start_returns_not_connected() {
+        let mut sink = AlsaSink::open(None, AudioFormat::S16);
+        assert!(matches!(
+            sink.write_bytes(&[0; 4]),
+            Err(SinkError::NotConnected(_))
+        ));
+        assert!(sink.period_buffer.is_empty());
+        sink.stop().unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires the ALSA null PCM plugin"]
+    fn null_pcm_closes_after_write_failure_and_can_restart() {
+        let mut sink = AlsaSink::open(Some("null".to_string()), AudioFormat::S16);
+        sink.start().unwrap();
+        let data = vec![0; sink.period_bytes];
+        sink.write_bytes(&data).unwrap();
+
+        // Drop puts the PCM in SETUP. The next write returns EBADFD rather than
+        // accepting data, exercising the actual handle's terminal-error path.
+        sink.pcm.as_ref().unwrap().drop().unwrap();
+        assert!(sink.write_bytes(&data).is_err());
+        assert!(sink.pcm.is_none());
+        assert!(sink.period_buffer.is_empty());
+        sink.stop().unwrap();
+
+        // An unconfigured PCM cannot drain. stop must still close it and return
+        // success, because a stop error makes the player exit the process.
+        let unprepared = PCM::new("null", Direction::Playback, true).unwrap();
+        assert!(unprepared.drain().is_err());
+        sink.pcm = Some(unprepared);
+        sink.stop().unwrap();
+        assert!(sink.pcm.is_none());
+
+        sink.start().unwrap();
+        sink.write_bytes(&data).unwrap();
+        sink.write_bytes(&[0; 4]).unwrap();
+        sink.stop().unwrap();
+        assert!(sink.pcm.is_none());
+        assert!(sink.period_buffer.is_empty());
     }
 }
