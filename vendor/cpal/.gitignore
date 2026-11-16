@@ -1,0 +1,12 @@
+/target
+Cargo.lock
+.cargo/
+.DS_Store
+recorded.wav
+rls*.log
+/.direnv
+!/examples/audioworklet-beep/.cargo/
+
+
+# Keep the published standalone lockfile for reproducible regression tests.
+!/Cargo.lock

@@ -21,12 +21,21 @@ include = [
     "oauth/**/*",
     "playback/**/*",
     "protocol/**/*",
+    "vendor/cpal/**/*",
     "Cargo.toml",
     "README.md",
     "LICENSE",
     "COMPILING.md",
     "CONTRIBUTING.md",
 ]
+
+[workspace]
+exclude = ["vendor/cpal"]
+
+# Rodio and librespot share CPAL 0.18.2, with additional bounded ALSA recovery.
+# See vendor/cpal/LIBRESPOT_PATCHES.md for provenance and removal criteria.
+[patch.crates-io]
+cpal = { path = "vendor/cpal" }
 
 [workspace.package]
 rust-version = "1.87"

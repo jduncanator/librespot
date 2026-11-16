@@ -41,6 +41,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check vendored CPAL formatting
+        run: cargo fmt --manifest-path vendor/cpal/Cargo.toml -- --check
+
   clippy:
     needs: fmt
     name: cargo clippy
@@ -64,6 +67,9 @@ jobs:
 
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack
+
+      - name: Check vendored CPAL ALSA recovery
+        run: cargo clippy --manifest-path vendor/cpal/Cargo.toml --locked --lib --tests
 
       - name: Run clippy on packages without TLS requirements
         run: cargo hack clippy -p librespot-protocol --each-feature
