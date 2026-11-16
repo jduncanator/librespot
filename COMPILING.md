@@ -5,6 +5,9 @@
 In order to compile librespot, you will first need to set up a suitable Rust build environment, with the necessary dependencies installed. You will need to have a C compiler, Rust, and the development libraries for the audio backend(s) you want installed. These instructions will walk you through setting up a simple build environment.
 
 ### Install Rust
+
+Librespot requires Rust **1.87 or later**, including for the default Rodio audio backend.
+
 The easiest, and recommended way to get Rust is to use [rustup](https://rustup.rs). Once that’s installed, Rust's standard tools should be set up and ready to use.
 
 #### Additional Rust tools - `rustfmt`
@@ -43,6 +46,19 @@ Depending on the chosen backend, specific development libraries are required.
 |JACK over Rodio     | `libjack-dev`                | `jack-audio-connection-kit-devel` |  `jack`     |
 |SDL                 | `libsdl2-dev`                | `SDL2-devel`                      |  `sdl2`     |
 |Pipe & subprocess   |  -                           |  -                                |  -          |
+
+The Rodio backend uses CPAL 0.18. Its platform requirements include **macOS 14.2 or
+later** for CoreAudio and **Android 8.0 (API 26) or later** for AAudio; see
+[CPAL's platform requirements](https://github.com/RustAudio/cpal/blob/v0.18.2/README.md#minimum-supported-versions).
+Rodio's optional recording, decoder and dithering features remain disabled;
+librespot continues to provide its own decoded samples and uses ALSA on Linux.
+
+CPAL now separates device descriptions from stable device IDs. Run
+`librespot --backend rodio --device '?'` to list both, and use the displayed ID
+with `--device` (for example, `alsa:default`). Host-specific IDs such as `default`
+are also accepted. Display names remain usable when they identify exactly one
+output; use an ID when multiple endpoints have the same description. If an old
+card name no longer matches after upgrading, select its ID from the new list.
 
 ###### For example, to build an ALSA based backend, you would need to run the following to install the required dependencies:
 

@@ -1029,7 +1029,7 @@ async fn get_setup() -> Setup {
                         } else {
                             error!(
                                 "Could not find an alsa mixer for \"{}\", it must be specified with `--{}` / `-{}`",
-                                &device.unwrap_or_default(),
+                                device.unwrap_or_default(),
                                 ALSA_MIXER_DEVICE,
                                 ALSA_MIXER_DEVICE_SHORT
                             );
