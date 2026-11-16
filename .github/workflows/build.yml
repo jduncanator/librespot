@@ -38,7 +38,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         toolchain:
-          - "1.85" # MSRV (Minimum supported rust version)
+          - "1.87" # MSRV (Minimum supported rust version)
           - stable
     steps:
       - name: Checkout code
@@ -68,6 +68,16 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace
+
+      - name: Test Rodio playback with ALSA null PCM
+        if: runner.os == 'Linux'
+        env:
+          ALSA_CONFIG_PATH: ${{ github.workspace }}/playback/tests/alsa-null.conf
+          LIBRESPOT_TEST_ALSA_NULL: "1"
+        run: >
+          cargo test --locked -p librespot-playback --lib
+          audio_backend::rodio::tests::alsa_null_plays_and_reopens
+          -- --ignored --exact --test-threads=1
 
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack

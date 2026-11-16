@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- [playback] Upgrade Rodio to 0.23 and CPAL to 0.18.2, including the released ALSA timestamp and recovery fixes; update the native ALSA dependency to 0.11 to share the same ALSA bindings
+- [build] Raise the minimum supported Rust version to 1.87 for Rodio 0.23 (breaking)
 - [core] Made `SpotifyId::to_base62`, `SpotifyId::to_base16`, `FileId::to_base16`, `SpotifyUri::to_id`, `SpotifyUri::to_uri` infallible (breaking)
 - [oauth] Made the URLs clickable in a terminal
 
