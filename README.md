@@ -99,6 +99,9 @@ The above command will create a receiver named ```Librespot```, with bitrate set
 
 A full list of runtime options is available [here](https://github.com/librespot-org/librespot/wiki/Options).
 
+For Linux network-audio installations, see [ALSA and AES67 playback troubleshooting](docs/alsa-aes67.md)
+for backend selection, fixed-rate conversion and diagnostics for timestamp or POLLERR failures.
+
 _Please Note: When using the cache feature, an authentication blob is stored for your account in the cache directory. For security purposes, we recommend that you set directory permissions on the cache directory to `700`._
 
 ## Contact
