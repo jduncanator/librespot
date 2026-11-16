@@ -73,15 +73,15 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo test --manifest-path vendor/cpal/Cargo.toml --locked --lib -- --include-ignored
 
-      - name: Test Rodio playback with ALSA null PCM
+      - name: Test Rodio playback and recovery with ALSA null PCM
         if: runner.os == 'Linux'
         env:
           ALSA_CONFIG_PATH: ${{ github.workspace }}/playback/tests/alsa-null.conf
           LIBRESPOT_TEST_ALSA_NULL: "1"
         run: >
           cargo test --locked -p librespot-playback --lib
-          audio_backend::rodio::tests::alsa_null_plays_and_reopens
-          -- --ignored --exact --test-threads=1
+          audio_backend::rodio::tests
+          -- --include-ignored --test-threads=1
 
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack
