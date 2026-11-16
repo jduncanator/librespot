@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [discovery] Return an HTTP error response instead of panicking on malformed discovery login requests
 - [core] Corrected discovery retry uptime limit to be 1 minute instead of 1 second
 - [audio] Try the next CDN URL when a fetch returns a non-206 status instead of only retrying on transport errors, fixing playback failures when the first CDN URL is reachable but does not stream audio.
+- [playback] Finish partial ALSA writes and retry unwritten audio after recovery; bound stalled writes and drains, close failed devices, and allow playback to restart after a failed drain
 
 ## [0.8.0] - 2025-11-10
 

@@ -13,7 +13,7 @@ edition.workspace = true
 default = ["rodio-backend", "native-tls"]
 
 # Audio backends
-alsa-backend = ["dep:alsa"]
+alsa-backend = ["dep:alsa", "dep:libc"]
 gstreamer-backend = [
     "dep:gstreamer",
     "dep:gstreamer-app",
@@ -61,6 +61,7 @@ zerocopy = { version = "0.8", features = ["derive"] }
 
 # Backends
 alsa = { version = "0.10", optional = true }
+libc = { version = "0.2", optional = true }
 jack = { version = "0.13", optional = true }
 portaudio-rs = { version = "0.3", optional = true }
 sdl2 = { version = "0.38", optional = true }

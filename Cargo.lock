@@ -1985,6 +1985,7 @@ dependencies = [
  "gstreamer-app",
  "gstreamer-audio",
  "jack",
+ "libc",
  "libpulse-binding",
  "libpulse-simple-binding",
  "librespot-audio",
